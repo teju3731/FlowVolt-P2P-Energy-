@@ -129,7 +129,6 @@ contract EnergyMarket {
         listingActive(listingId)
     {
         Listing storage listing = listings[listingId];
-        require(msg.sender != listing.seller, "EnergyMarket: cannot buy own listing");
         require(amount > 0, "EnergyMarket: zero amount");
         require(amount <= listing.energyAmount, "EnergyMarket: exceeds available amount");
 

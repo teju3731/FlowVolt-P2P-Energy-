@@ -227,8 +227,8 @@ def run_simulation(nodes, oracle, cycles=0):
 
 if __name__ == "__main__":
     nodes = [
-        SolarSimulator("Node-A (Rooftop Solar)", "0xAbC1234567890AbC1234567890AbC1234567890aB"),
-        SolarSimulator("Node-B (Balcony Array)",  "0xDeF0987654321DeF0987654321DeF0987654321dE"),
+        SolarSimulator("Node-A (Rooftop Solar)", "0x8002b019B8F4329799C0b33eEaee861004a4F017"),
+        SolarSimulator("Node-B (Balcony Array)", "0x8002b019B8F4329799C0b33eEaee861004a4F017"),
     ]
     oracle = OracleBridge()
 

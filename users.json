@@ -5,5 +5,26 @@
     "email": "tejas.bhosale17547@sakec.ac.in",
     "password": "$2a$10$zhtYgKlX4cO33EwcLTykJe/JMnSTcX3riJfNx9N0IbRXPqIjyz3bi",
     "nodeType": "Solar"
+  },
+  {
+    "id": 1777359827325,
+    "name": "deep",
+    "email": "deepshirke36@gmail.com",
+    "password": "$2a$10$f4dNv5v0SIyL4JLnxvK87uiUQShHK/gvddsvUD5tPppR5wMYDlKmm",
+    "nodeType": "Solar"
+  },
+  {
+    "id": 1777361111803,
+    "name": "hasmukh",
+    "email": "deep.17080@sakec.ac.in",
+    "password": "$2a$10$q6c7Y6plQOIes7mwMFHPcOILdwQvKyOOXgjXB7iJfvkuYvsGBb792",
+    "nodeType": "Solar"
+  },
+  {
+    "id": 1777362354797,
+    "name": "Deep",
+    "email": "shirkedeep360@gmail.com",
+    "password": "$2a$10$Jkk3G1Qa0KwI5tEM1FQQtumMXNGbR/ktcMqNB3/bFjlb7aEeT8BL2",
+    "nodeType": "Solar"
   }
 ]

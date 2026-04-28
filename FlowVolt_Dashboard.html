@@ -287,7 +287,7 @@ const CONTRACT_ABI = [
 // ─── Mock Data Generators ───────────────────────────────────────────────────
 const rnd = (min,max,dec=2) => +(Math.random()*(max-min)+min).toFixed(dec);
 const shortAddr = a => (a && typeof a === 'string' && a.length > 10) ? a.slice(0,6)+'...'+a.slice(-4) : (a || '0x...');
-const ADDRS = ['0xA1b2C3d4E5f60011','0xDe45fA9823cC7712','0xF00dBa5E11223344','0xCa1e456789AbCd01','0xBe3f012345678901'];
+const ADDRS = ['0xDe45fA9823cC7712','0x8002b019B8F4329799C0b33eEaee861004a4F017','0xF00dBa5E11223344','0xCa1e456789AbCd01','0xBe3f012345678901'];
 const TXHASHES = () => '0x'+[...Array(40)].map(()=>'0123456789abcdef'[Math.floor(Math.random()*16)]).join('');
 
 function makeListings(){
@@ -392,7 +392,7 @@ function DonutChart({pct,color='#00ff88',size=120}){
 
 // ─── PAGES ──────────────────────────────────────────────────────────────────
 
-function Dashboard({wallet, setWallet, isSepolia, switchNetwork, notify}){
+function Dashboard({wallet, setWallet, isSepolia, switchNetwork, notify, contractAddr}){
   const [readings,setReadings]=useState(()=>{
     const hr=new Date().getHours();
     return [...Array(12)].map((_,i)=>{
@@ -416,7 +416,7 @@ function Dashboard({wallet, setWallet, isSepolia, switchNetwork, notify}){
     if (!wallet) return;
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
+      const contract = new ethers.Contract(contractAddr, CONTRACT_ABI, provider);
       const bal = await contract.balanceOf(wallet);
       setOnChainBalance(bal.toString());
     } catch (e) {
@@ -454,7 +454,7 @@ function Dashboard({wallet, setWallet, isSepolia, switchNetwork, notify}){
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+      const contract = new ethers.Contract(contractAddr, CONTRACT_ABI, signer);
       const amount = Math.floor(rnd(1, 5)); // Simulate a batch of 1-5 kWh
       const tx = await contract.mintEnergyTokens(wallet, amount, "Solar Node-A");
       notify("Syncing...", "Transaction sent to Sepolia. Waiting for confirmation.");
@@ -463,8 +463,15 @@ function Dashboard({wallet, setWallet, isSepolia, switchNetwork, notify}){
       fetchBalance();
     } catch (e) {
       console.error("Sync failed", e);
-      const reason = e.reason || e.message || "Transaction failed";
-      notify("Error", reason.includes("user rejected") ? "Transaction rejected by user." : reason);
+      let msg = "Transaction failed";
+      if (e.message?.includes("user rejected")) {
+        msg = "Transaction rejected by user.";
+      } else if (e.message?.includes("not authorized oracle")) {
+        msg = "Unauthorized: Only the contract owner/oracle can mint tokens.";
+      } else {
+        msg = e.reason || e.message || msg;
+      }
+      notify("Error", msg);
     } finally {
       setSyncing(false);
     }
@@ -591,7 +598,7 @@ function Dashboard({wallet, setWallet, isSepolia, switchNetwork, notify}){
   );
 }
 
-function Marketplace({wallet,notify}){
+function Marketplace({wallet,notify, contractAddr}){
   const [listings,setListings]=useState([]);
   const [filter,setFilter]=useState('all');
   const [search,setSearch]=useState('');
@@ -602,13 +609,13 @@ function Marketplace({wallet,notify}){
   const fetchListings = useCallback(async () => {
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
+      const contract = new ethers.Contract(contractAddr, CONTRACT_ABI, provider);
       const rawListings = await contract.getActiveListings();
       const formatted = rawListings.map((l) => ({
         id: Number(l.listingId),
         seller: l.seller,
         amount: Number(l.energyAmount),
-        price: Number(l.pricePerToken),
+        price: l.pricePerToken, // Keep as BigInt/String for precision
         source: 'solar', 
         node: 'Verified Node'
       })).filter(l => l.amount > 0);
@@ -636,14 +643,14 @@ function Marketplace({wallet,notify}){
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+      const contract = new ethers.Contract(contractAddr, CONTRACT_ABI, signer);
       
       const totalCost = BigInt(buyModal.amount) * BigInt(buyModal.price);
       const tx = await contract.buyEnergy(BigInt(buyModal.id), BigInt(buyModal.amount), { value: totalCost });
       notify('Confirming...', 'Please sign the transaction in MetaMask.');
       await tx.wait();
       
-      notify('Success! ⚡', `Energy bought and settled. Listing removed from marketplace.`);
+      notify('Success! ⚡', `Energy bought and settled. Trade confirmed on-chain.`);
       setBuyModal(null);
       fetchListings();
     } catch (e) {
@@ -662,7 +669,7 @@ function Marketplace({wallet,notify}){
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+      const contract = new ethers.Contract(contractAddr, CONTRACT_ABI, signer);
       
       // Check balance first to prevent revert
       const bal = await contract.balanceOf(wallet);
@@ -672,11 +679,12 @@ function Marketplace({wallet,notify}){
         return;
       }
 
-      const tx = await contract.listEnergy(BigInt(formData.amount), BigInt(formData.price));
+      const priceInWei = ethers.parseUnits(formData.price, 18); // Assume input is in ETH
+      const tx = await contract.listEnergy(BigInt(formData.amount), priceInWei);
       notify('Listing...', 'Please sign the transaction in MetaMask.');
       await tx.wait();
       
-      notify('Energy Listed! 🌱', `${formData.amount} kWh listed on Sepolia.`);
+      notify('Energy Listed! 🌱', `${formData.amount} kWh listed on Sepolia at ${formData.price} ETH/kWh.`);
       setFormData({amount:'',price:''});
       fetchListings();
     } catch (e) {
@@ -705,8 +713,8 @@ function Marketplace({wallet,notify}){
             value:formData.amount,onChange:e=>setFormData(p=>({...p,amount:e.target.value}))})
         ),
         React.createElement('div',{className:'form-group'},
-          React.createElement('label',{className:'form-label'},'Price per kWh (Tokens)'),
-          React.createElement('input',{className:'form-input',type:'number',placeholder:'e.g. 10',
+          React.createElement('label',{className:'form-label'},'Price per kWh (ETH)'),
+          React.createElement('input',{className:'form-input',type:'number',placeholder:'e.g. 0.001',
             value:formData.price,onChange:e=>setFormData(p=>({...p,price:e.target.value}))})
         )
       ),
@@ -735,9 +743,13 @@ function Marketplace({wallet,notify}){
             )
           ),
           React.createElement('div',{className:'listing-amount'},l.amount,React.createElement('span',{className:'listing-unit'},' kWh')),
-          React.createElement('div',{className:'listing-price'},`${l.price} Tokens`,React.createElement('span',{style:{fontSize:13,color:'var(--muted)',fontWeight:400}},' / kWh')),
-          React.createElement('button',{className:'buy-btn',onClick:()=>setBuyModal(l)},
-            wallet?'⚡ Buy Energy':'Connect Wallet to Buy')
+          React.createElement('div',{className:'listing-price'},`${ethers.formatEther(l.price)} ETH`,React.createElement('span',{style:{fontSize:13,color:'var(--muted)',fontWeight:400}},' / kWh')),
+          React.createElement('button',{
+            className: 'buy-btn',
+            onClick: () => setBuyModal(l)
+          },
+            !wallet ? 'Connect Wallet' : '⚡ Buy Energy'
+          )
         )
       )
     ),
@@ -751,8 +763,8 @@ function Marketplace({wallet,notify}){
           [
             ['Seller',shortAddr(buyModal.seller)],
             ['Energy Amount',`${buyModal.amount} kWh`],
-            ['Price per kWh',`${buyModal.price} Tokens`],
-            ['Total Cost',`${(buyModal.amount*buyModal.price)} Tokens`],
+            ['Price per kWh',`${ethers.formatEther(buyModal.price)} ETH`],
+            ['Total Cost',`${ethers.formatEther(BigInt(buyModal.amount) * BigInt(buyModal.price))} ETH`],
           ].map(([k,v],i)=>
             React.createElement('div',{key:i,className:'modal-row'},
               React.createElement('span',{style:{color:'var(--muted)'}},k),
@@ -769,7 +781,7 @@ function Marketplace({wallet,notify}){
   );
 }
 
-function WalletPage({wallet,setWallet,notify}){
+function WalletPage({wallet,setWallet,notify, contractAddr, setContractAddr}){
   const [history, setHistory] = useState([]);
   const [tokenBal, setTokenBal] = useState('0');
   const [ethBal, setEthBal] = useState('0');
@@ -778,7 +790,7 @@ function WalletPage({wallet,setWallet,notify}){
     if (!wallet) return;
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
+      const contract = new ethers.Contract(contractAddr, CONTRACT_ABI, provider);
       
       const tBal = await contract.balanceOf(wallet);
       setTokenBal(tBal.toString());
@@ -842,11 +854,22 @@ function WalletPage({wallet,setWallet,notify}){
     ),
     React.createElement('div',{className:'panel'},
       React.createElement('div',{className:'panel-hd'},
-        React.createElement('div',{className:'panel-title'},'Recent Blockchain Activity'),
-        React.createElement('div',{className:'panel-badge'},'Real-time Events')
+        React.createElement('div',{className:'panel-title'},'Contract Settings'),
+        React.createElement('div',{className:'panel-badge'},'Advanced')
       ),
-      React.createElement('div',{style:{textAlign:'center', padding: '20px', color: 'var(--muted)', fontSize: '13px'}}, 
-        'Wallet transaction history is synced with the Sepolia Audit Log.'
+      React.createElement('div',{style:{display:'flex',flexDirection:'column',gap:12}},
+        React.createElement('label',{className:'form-label',style:{fontSize:10}},'Active Contract Address'),
+        React.createElement('div',{style:{display:'flex',gap:10}},
+          React.createElement('input',{
+            className:'form-input',
+            style:{flex:1,fontSize:12,fontFamily:'Space Mono'},
+            value: contractAddr,
+            onChange: (e) => setContractAddr(e.target.value)
+          })
+        ),
+        React.createElement('div',{style:{fontSize:11,color:'var(--muted)'}},
+          'Note: Changing this will affect all marketplace and dashboard interactions.'
+        )
       )
     )
   );
@@ -938,14 +961,14 @@ function Analytics(){
   );
 }
 
-function AuditLog(){
+function AuditLog({contractAddr}){
   const [log, setLog] = useState([]);
   const [filter, setFilter] = useState('all');
 
   const fetchEvents = useCallback(async () => {
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
+      const contract = new ethers.Contract(contractAddr, CONTRACT_ABI, provider);
       
       // Fetch TradeExecuted and EnergyMinted events
       const tradeFilter = contract.filters.TradeExecuted();
@@ -1033,7 +1056,7 @@ function AuditLog(){
               React.createElement('td',{className:'from-to'},shortAddr(row.from)),
               React.createElement('td',{className:'from-to'},shortAddr(row.to)),
               React.createElement('td',{className:'mono',style:{color:'var(--green)',fontWeight:700}},row.amount+' kWh'),
-              React.createElement('td',{className:'mono',style:{color:'var(--amber)'}},row.price+' Tokens'),
+              React.createElement('td',{className:'mono',style:{color:'var(--amber)'}},ethers.formatEther(row.price)+' ETH'),
               React.createElement('td',{className:'hash-cell',title:row.txHash},shortAddr(row.txHash)+'...'),
               React.createElement('td',{className:'mono',style:{fontSize:11,color:'var(--muted)'}},row.block),
               React.createElement('td',{style:{fontSize:12,color:'var(--green)', fontWeight: 700}},row.time)
@@ -1324,6 +1347,7 @@ function App(){
   const [notif,setNotif]=useState(null);
   const [isSepolia, setIsSepolia] = useState(true);
   const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('fv_current')));
+  const [contractAddr, setContractAddr] = useState(CONTRACT_ADDRESS);
 
   function notify(title,msg){
     setNotif({title,msg});
@@ -1373,6 +1397,8 @@ function App(){
     }
   }, [checkNetwork]);
 
+  // Removed aggressive auto-reconnect to allow manual disconnection
+
   const switchNetwork = async () => {
     try {
       await window.ethereum.request({
@@ -1404,11 +1430,11 @@ function App(){
   ];
 
   const pages={
-    dashboard:React.createElement(Dashboard,{wallet, setWallet, isSepolia, switchNetwork, notify}),
-    marketplace:React.createElement(Marketplace,{wallet,notify}),
-    wallet:React.createElement(WalletPage,{wallet,setWallet,notify}),
+    dashboard:React.createElement(Dashboard,{wallet, setWallet, isSepolia, switchNetwork, notify, contractAddr}),
+    marketplace:React.createElement(Marketplace,{wallet,notify, contractAddr}),
+    wallet:React.createElement(WalletPage,{wallet,setWallet,notify, contractAddr, setContractAddr}),
     analytics:React.createElement(Analytics,null),
-    audit:React.createElement(AuditLog,null),
+    audit:React.createElement(AuditLog,{contractAddr}),
   };
 
   if (!user) return React.createElement(React.Fragment, null, 

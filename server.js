@@ -14,6 +14,12 @@ const DB_PATH = path.join(__dirname, 'users.json');
 
 app.use(cors());
 app.use(bodyParser.json());
+app.use(express.static(__dirname)); // Serve root files like FlowVolt_Dashboard.html
+
+// --- Root Route: Serve the main dashboard ---
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'FlowVolt_Dashboard.html'));
+});
 
 // --- Persistent Database Helpers ---
 const readUsers = () => {
